@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Corsi Block-Tapping Task</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#121212',
+                        cardBg: '#1a1a1a',
+                        blockDefault: '#3b3b3b',
+                        blockFlash: '#ffffff',
+                        accentBlue: '#3498db',
+                        accentGreen: '#2ecc71',
+                        accentRed: '#e74c3c',
+                        accentYellow: '#f39c12'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Touch and layout optimizations */
+        body {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        /* Prevent scrolling bounce on iOS */
+        html, body {
+            overflow-x: hidden;
+            height: 100%;
+        }
+
+        /* Block aspect ratio and touch feel */
+        .corsi-block {
+            transition: background-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+        }
+        
+        .corsi-block:active {
+            transform: scale(0.95);
+        }
+
+        /* Custom scrollbars for tables on small screens */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #121212;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-darkBg text-gray-100 flex flex-col justify-between min-h-screen">
+
+    <!-- Header Bar -->
+    <header class="w-full bg-cardBg border-b border-gray-800 p-4 text-center shadow-md">
+        <h1 class="text-xl sm:text-2xl font-bold tracking-wide text-white">CORSI BLOCK-TAPPING TASK</h1>
+    </header>
+
+    <!-- Main Container -->
+    <main id="app-container" class="flex-grow flex flex-col items-center justify-center p-4 w-full max-w-4xl mx-auto">
+        <!-- Dynamic content injected here -->
+    </main>
+
+    <!-- Footer / Quit Instruction -->
+    <footer class="w-full bg-cardBg border-t border-gray-800 p-3 text-center text-xs sm:text-sm text-gray-400">
+        <span id="footer-text">Press <kbd class="px-1.5 py-0.5 bg-gray-800 border border-gray-600 rounded text-gray-200">Q</kbd> or <kbd class="px-1.5 py-0.5 bg-gray-800 border border-gray-600 rounded text-gray-200">0</kbd> during game to end early</span>
+    </footer>
+
+    <script>
+        /**
+         * CORSI BLOCK-TAPPING TASK - Web Application Implementation
+         * Direct port and enhancement of Tkinter Python Application.
+         */
+
+        // Constants matching original Python script parameters
+        const BLOCK_COLOR = "#3b3b3b";
+        const FLASH_COLOR = "#ffffff";
+        const MAX_SPAN_CAP = 9;
+        const MAX_ERRORS_PER_LEVEL = 3;
+
+        // Keymaps mapping regular numbers and numpad keys to 3x3 grid indices (0-8)
+        const KEY_MAP = {
+            '7': 0, 'Numpad7': 0,
+            '8': 1, 'Numpad8': 1,
+            '9': 2, 'Numpad9': 2,
+            '4': 3, 'Numpad4': 3,
+            '5': 4, 'Numpad5': 4,
+            '6': 5, 'Numpad6': 5,
+            '1': 6, 'Numpad1': 6,
+            '2': 7, 'Numpad2': 7,
+            '3': 8, 'Numpad3': 8
+        };
+
+        // Application State
+        const state = {
+            running: false,
+            sequenceLength: 1,
+            targetSequence: [],
+            userSequence: [],
+            acceptingInput: false,
+            results: [],
+            totalErrors: 0,
+            levelErrorCount: 0,
+            trialStartTime: 0,
+            activeScreen: 'instruction', // 'instruction', 'game', 'results'
+            animationTimeout: null
+        };
+
+        const appContainer = document.getElementById('app-container');
+
+        // Global Keyboard Event Listener
+        window.addEventListener('keydown', (e) => {
+            if (state.activeScreen === 'instruction' && e.code === 'Space') {
+                e.preventDefault();
+                startGame();
+                return;
+            }
+
+            if (!state.running) return;
+
+            const key = e.key.toLowerCase();
+            const code = e.code;
+
+            // Quit shortcuts
+            if (key === 'q' || key === '0' || code === 'Numpad0') {
+                endGame(false);
+                return;
+            }
+
+            if (!state.acceptingInput) return;
+
+            // Map keypad keys or standard number keys
+            let mappedIndex = null;
+            if (KEY_MAP.hasOwnProperty(key)) {
+                mappedIndex = KEY_MAP[key];
+            } else if (KEY_MAP.hasOwnProperty(code)) {
+                mappedIndex = KEY_MAP[code];
+            }
+
+            if (mappedIndex !== null) {
+                e.preventDefault();
+                handleAction(mappedIndex);
+            }
+        });
+
+        // Initialize Instruction Screen on Load
+        function showInstructionPage() {
+            state.running = false;
+            state.sequenceLength = 1;
+            state.results = [];
+            state.totalErrors = 0;
+            state.levelErrorCount = 0;
+            state.activeScreen = 'instruction';
+            if (state.animationTimeout) clearTimeout(state.animationTimeout);
+
+            appContainer.innerHTML = `
+                <div class="bg-cardBg border border-gray-800 rounded-2xl p-6 sm:p-8 w-full max-w-xl text-center shadow-2xl flex flex-col items-center">
+                    <h2 class="text-2xl sm:text-3xl font-bold text-white mb-4">CORSI BLOCK-TAPPING TASK</h2>
+                    
+                    <div class="text-gray-300 text-sm sm:text-base space-y-4 text-left w-full mb-6 leading-relaxed">
+                        <div class="bg-darkBg p-4 rounded-xl border border-gray-800">
+                            <p class="font-semibold text-accentBlue mb-1">GOAL:</p>
+                            <p>Watch the sequence of flashing white blocks closely. Repeat the spatial sequence using your <strong>Touchscreen/Mouse</strong> or <strong>Numpad/Number keys</strong>.</p>
+                        </div>
+
+                        <div class="bg-darkBg p-4 rounded-xl border border-gray-800 text-center">
+                            <p class="font-semibold text-accentBlue mb-2">KEYPAD / GRID LAYOUT:</p>
+                            <div class="inline-grid grid-cols-3 gap-2 font-mono font-bold text-gray-200 text-lg">
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[7]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[8]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[9]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[4]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[5]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[6]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[1]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[2]</span>
+                                <span class="bg-blockDefault px-3 py-1.5 rounded">[3]</span>
+                            </div>
+                        </div>
+
+                        <div class="bg-darkBg p-4 rounded-xl border border-gray-800">
+                            <p class="font-semibold text-accentBlue mb-1">RULES:</p>
+                            <ul class="list-disc list-inside space-y-1 text-gray-300 text-xs sm:text-sm">
+                                <li>If you make an error, you will repeat the same sequence length until solved.</li>
+                                <li>Making <strong>3 errors on the same level</strong> will automatically end the task.</li>
+                                <li>To quit early at any time, press <strong>[0]</strong> or <strong>[Q]</strong>.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <button id="start-btn" onclick="startGame()" 
+                        class="w-full sm:w-auto px-8 py-4 bg-accentBlue hover:bg-blue-600 active:bg-blue-700 text-white font-bold text-lg rounded-xl shadow-lg transition-transform transform active:scale-95 cursor-pointer">
+                        BEGIN TASK (PRESS SPACE)
+                    </button>
+                </div>
+            `;
+        }
+
+        // Setup Game UI
+        function startGame() {
+            state.running = true;
+            state.activeScreen = 'game';
+            
+            appContainer.innerHTML = `
+                <div class="w-full flex flex-col items-center max-w-md mx-auto">
+                    <!-- Status Header -->
+                    <div id="status-label" class="text-2xl sm:text-3xl font-bold text-white mb-2 text-center">
+                        Sequence Level: ${state.sequenceLength}
+                    </div>
+                    
+                    <!-- Feedback Status -->
+                    <div id="feedback-label" class="text-base sm:text-xl font-bold mb-6 text-gray-400 h-8 flex items-center justify-center text-center">
+                        Watch carefully...
+                    </div>
+
+                    <!-- 3x3 Grid Layout -->
+                    <div id="grid-container" class="grid grid-cols-3 gap-3 sm:gap-4 w-full aspect-square max-w-[340px] sm:max-w-[400px] bg-cardBg p-4 rounded-2xl border border-gray-800 shadow-2xl">
+                        ${Array.from({ length: 9 }).map((_, i) => `
+                            <button id="block-${i}" 
+                                onclick="handleBlockClick(${i})"
+                                class="corsi-block w-full h-full rounded-xl border-2 border-gray-600 focus:outline-none shadow-md flex items-center justify-center font-bold text-gray-400 text-sm select-none"
+                                style="background-color: ${BLOCK_COLOR};">
+                                <span class="opacity-30 sm:text-base">${getBlockKeyLabel(i)}</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+
+            nextRound();
+        }
+
+        function getBlockKeyLabel(index) {
+            const labels = ['7', '8', '9', '4', '5', '6', '1', '2', '3'];
+            return labels[index] || '';
+        }
+
+        // Random sequence generation without immediate consecutive duplicates
+        function generateRandomSequence(length) {
+            const seq = [];
+            while (seq.length < length) {
+                const nextIdx = Math.floor(Math.random() * 9);
+                if (seq.length === 0 || nextIdx !== seq[seq.length - 1]) {
+                    seq.push(nextIdx);
+                }
+            }
+            return seq;
+        }
+
+        function nextRound() {
+            if (!state.running) return;
+
+            if (state.sequenceLength > MAX_SPAN_CAP) {
+                endGame(true);
+                return;
+            }
+
+            const statusLabel = document.getElementById('status-label');
+            const feedbackLabel = document.getElementById('feedback-label');
+
+            if (statusLabel) statusLabel.textContent = `Sequence Level: ${state.sequenceLength}`;
+            if (feedbackLabel) {
+                feedbackLabel.textContent = "Watch carefully...";
+                feedbackLabel.className = "text-base sm:text-xl font-bold mb-6 text-gray-400 h-8 flex items-center justify-center text-center";
+            }
+
+            state.userSequence = [];
+            state.acceptingInput = false;
+
+            state.targetSequence = generateRandomSequence(state.sequenceLength);
+            state.animationTimeout = setTimeout(() => animateSequence(0), 1000);
+        }
+
+        function animateSequence(index) {
+            if (!state.running) return;
+
+            if (index < state.targetSequence.length) {
+                const blockIdx = state.targetSequence[index];
+                flashBlock(blockIdx);
+                state.animationTimeout = setTimeout(() => animateSequence(index + 1), 850);
+            } else {
+                const feedbackLabel = document.getElementById('feedback-label');
+                if (feedbackLabel) {
+                    feedbackLabel.textContent = "YOUR TURN!";
+                    feedbackLabel.className = "text-base sm:text-xl font-bold mb-6 text-emerald-400 h-8 flex items-center justify-center text-center animate-pulse";
+                }
+                state.acceptingInput = true;
+                state.trialStartTime = performance.now();
+            }
+        }
+
+        function flashBlock(idx) {
+            const blockEl = document.getElementById(`block-${idx}`);
+            if (!blockEl) return;
+
+            blockEl.style.backgroundColor = FLASH_COLOR;
+            blockEl.classList.add('border-white', 'scale-95');
+
+            setTimeout(() => {
+                if (blockEl) {
+                    blockEl.style.backgroundColor = BLOCK_COLOR;
+                    blockEl.classList.remove('border-white', 'scale-95');
+                }
+            }, 400);
+        }
+
+        function handleBlockClick(idx) {
+            if (!state.running || !state.acceptingInput) return;
+            handleAction(idx);
+        }
+
+        function handleAction(idx) {
+            if (!state.running || !state.acceptingInput) return;
+
+            flashBlock(idx);
+            state.userSequence.push(idx);
+
+            const currentStep = state.userSequence.length - 1;
+            const feedbackLabel = document.getElementById('feedback-label');
+
+            // Incorrect step
+            if (state.userSequence[currentStep] !== state.targetSequence[currentStep]) {
+                state.acceptingInput = false;
+                state.totalErrors++;
+                state.levelErrorCount++;
+                recordTrial(false);
+
+                if (state.levelErrorCount >= MAX_ERRORS_PER_LEVEL) {
+                    if (feedbackLabel) {
+                        feedbackLabel.textContent = "3 ERRORS ON LEVEL - TASK ENDED";
+                        feedbackLabel.className = "text-base sm:text-xl font-bold mb-6 text-accentRed h-8 flex items-center justify-center text-center";
+                    }
+                    setTimeout(() => endGame(false), 1500);
+                } else {
+                    if (feedbackLabel) {
+                        feedbackLabel.textContent = `INCORRECT (${state.levelErrorCount}/${MAX_ERRORS_PER_LEVEL} errors) - Repeating`;
+                        feedbackLabel.className = "text-base sm:text-xl font-bold mb-6 text-accentRed h-8 flex items-center justify-center text-center";
+                    }
+                    setTimeout(nextRound, 1500);
+                }
+                return;
+            }
+
+            // Sequence fully matched correctly
+            if (state.userSequence.length === state.targetSequence.length) {
+                state.acceptingInput = false;
+                recordTrial(true);
+
+                if (feedbackLabel) {
+                    feedbackLabel.textContent = "CORRECT!";
+                    feedbackLabel.className = "text-base sm:text-xl font-bold mb-6 text-accentGreen h-8 flex items-center justify-center text-center";
+                }
+
+                state.levelErrorCount = 0;
+                state.sequenceLength++;
+                setTimeout(nextRound, 1500);
+            }
+        }
+
+        function recordTrial(isCorrect) {
+            const rtInSeconds = ((performance.now() - state.trialStartTime) / 1000).toFixed(2);
+
+            let matchingElements = 0;
+            for (let i = 0; i < state.userSequence.length; i++) {
+                if (state.userSequence[i] === state.targetSequence[i]) {
+                    matchingElements++;
+                }
+            }
+
+            const totalElements = state.targetSequence.length;
+            const accuracyPct = ((matchingElements / totalElements) * 100).toFixed(1);
+
+            // Display indices as 1-based labels matching block standard key pads (1 to 9 mapped top-left to bottom-right order)
+            const targetPositions = state.targetSequence.map(i => i + 1);
+            const userPositions = state.userSequence.map(i => i + 1);
+
+            state.results.push({
+                round: state.targetSequence.length,
+                target: targetPositions.join(', '),
+                user: userPositions.length > 0 ? userPositions.join(', ') : 'None',
+                isCorrect: isCorrect,
+                rt: `${rtInSeconds}s`,
+                accuracy: `${accuracyPct}%`
+            });
+        }
+
+        function endGame(completedAll = true) {
+            state.running = false;
+            state.acceptingInput = false;
+            if (state.animationTimeout) clearTimeout(state.animationTimeout);
+            showResultsScreen(completedAll);
+        }
+
+        function showResultsScreen(completedAll) {
+            state.activeScreen = 'results';
+
+            const correctRounds = state.results.filter(r => r.isCorrect).map(r => r.round);
+            const corsiSpan = correctRounds.length > 0 ? Math.max(...correctRounds) : 0;
+
+            const totalTrialsCount = state.results.length;
+            const totalCorrectTrials = state.results.filter(r => r.isCorrect).length;
+            const overallPct = totalTrialsCount > 0 ? ((totalCorrectTrials / totalTrialsCount) * 100).toFixed(1) : "0.0";
+
+            let endTitle = "TASK COMPLETED!";
+            let titleColorClass = "text-accentGreen";
+
+            if (!completedAll) {
+                if (state.levelErrorCount >= MAX_ERRORS_PER_LEVEL) {
+                    endTitle = `TERMINATED (3 ERRORS ON LEVEL ${state.sequenceLength})`;
+                    titleColorClass = "text-accentRed";
+                } else {
+                    endTitle = "SESSION TERMINATED EARLY";
+                    titleColorClass = "text-accentYellow";
+                }
+            }
+
+            appContainer.innerHTML = `
+                <div class="w-full max-w-3xl flex flex-col items-center">
+                    <h2 class="text-xl sm:text-3xl font-bold ${titleColorClass} mb-4 text-center">
+                        ${endTitle}
+                    </h2>
+
+                    <!-- Summary Stats Card -->
+                    <div class="w-full bg-cardBg border border-gray-800 rounded-xl p-4 sm:p-6 mb-6 shadow-xl flex flex-col sm:flex-row justify-around items-center gap-4 text-center sm:text-left">
+                        <div>
+                            <div class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Corsi Span Score</div>
+                            <div class="text-3xl sm:text-4xl font-extrabold text-accentBlue">${corsiSpan}</div>
+                        </div>
+                        <div class="w-full sm:w-px h-px sm:h-12 bg-gray-800"></div>
+                        <div>
+                            <div class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Total Errors Made</div>
+                            <div class="text-2xl sm:text-3xl font-bold text-accentRed">${state.totalErrors}</div>
+                        </div>
+                        <div class="w-full sm:w-px h-px sm:h-12 bg-gray-800"></div>
+                        <div>
+                            <div class="text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Overall Accuracy</div>
+                            <div class="text-2xl sm:text-3xl font-bold text-accentGreen">${overallPct}%</div>
+                        </div>
+                    </div>
+
+                    <!-- Results Data Table Container -->
+                    <div class="w-full bg-cardBg border border-gray-800 rounded-xl overflow-hidden shadow-xl mb-6">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs sm:text-sm">
+                                <thead class="bg-gray-900 border-b border-gray-800 text-accentBlue font-bold uppercase tracking-wider text-center">
+                                    <tr>
+                                        <th class="py-3 px-3">Span</th>
+                                        <th class="py-3 px-3">Target Sequence</th>
+                                        <th class="py-3 px-3">User Sequence</th>
+                                        <th class="py-3 px-3">Reaction Time</th>
+                                        <th class="py-3 px-3">Accuracy</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-800 text-center font-mono">
+                                    ${state.results.map((row, idx) => `
+                                        <tr class="${idx % 2 === 0 ? 'bg-darkBg' : 'bg-cardBg'} hover:bg-gray-800/50 transition-colors">
+                                            <td class="py-2.5 px-3 font-bold text-gray-200">${row.round}</td>
+                                            <td class="py-2.5 px-3 text-gray-300 max-w-[150px] truncate" title="${row.target}">${row.target}</td>
+                                            <td class="py-2.5 px-3 text-gray-300 max-w-[150px] truncate" title="${row.user}">${row.user}</td>
+                                            <td class="py-2.5 px-3 text-gray-300">${row.rt}</td>
+                                            <td class="py-2.5 px-3 ${row.isCorrect ? 'text-accentGreen font-bold' : 'text-accentRed'}">${row.accuracy}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <button onclick="showInstructionPage()" 
+                        class="px-8 py-3.5 bg-gray-700 hover:bg-gray-600 active:bg-gray-800 text-white font-bold text-base sm:text-lg rounded-xl shadow-lg transition-transform transform active:scale-95 cursor-pointer">
+                        RESTART TASK
+                    </button>
+                </div>
+            `;
+        }
+
+        // Initialize App on window load
+        window.onload = function() {
+            showInstructionPage();
+        };
+    </script>
+</body>
+</html>
