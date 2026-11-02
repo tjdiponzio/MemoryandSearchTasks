@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Card Match Game with Memory Analytics</title>
+    <style>
+        :root {
+            --bg-color: #ECEFF1;
+            --card-back: #2C3E50;
+            --card-front: #3498DB;
+            --card-match: #2ECC71;
+            --text-dark: #2C3E50;
+            --text-light: #ffffff;
+        }
+
+        html {
+            height: -webkit-fill-available;
+            -webkit-text-size-adjust: 100%; /* Prevents iOS font boosting */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            min-height: -webkit-fill-available; 
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation; /* Prevents double-tap zoom delay */
+            overflow: hidden; /* Prevents bounce scrolling during gameplay */
+        }
+
+        .game-wrapper {
+            width: 100%;
+            max-width: 440px; 
+            padding: 12px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        /* Compact HUD Stats Bar optimized for mobile heights */
+        .hud-stats {
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--text-dark);
+            margin-bottom: 12px;
+            text-align: center;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Responsive Grid Framework */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr); 
+            gap: 6px; 
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .card-btn {
+            aspect-ratio: 1 / 1;
+            background-color: var(--card-back);
+            background-image: radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 0);
+            background-size: 8px 8px;
+            color: transparent; 
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            line-height: 1; /* Fix Safari button text vertical displacement */
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.12);
+            transition: background-color 0.15s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent; /* Removes blue gray flash on tap */
+        }
+        
+        /* Fixed: active scale state works on iOS now */
+        .card-btn:active { 
+            transform: scale(0.92); 
+        }
+        
+        .card-btn.flipped { 
+            background-color: var(--card-front); 
+            background-image: none;
+            color: var(--text-light);
+        }
+        
+        .card-btn.matched { 
+            background-color: var(--card-match); 
+            background-image: none;
+            color: var(--text-light);
+            cursor: default; 
+            pointer-events: none; 
+            box-shadow: none;
+        }
+
+        /* Mobile View End Panel */
+        .results-panel {
+            display: none;
+            width: 100%;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .results-panel.active { 
+            display: flex; 
+        }
+        
+        .results-title { font-size: 22px; font-weight: bold; color: #27AE60; margin-bottom: 4px; }
+        .results-subtitle { font-size: 14px; font-weight: bold; color: var(--text-dark); margin-bottom: 15px; }
+
+        /* Scroll Box optimization */
+        .history-scroll-box {
+            width: 100%;
+            max-height: 50vh; 
+            overflow-y: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+            -webkit-overflow-scrolling: touch; /* Momentum scrolling for old Safari engines */
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+        .history-table th, .history-table td { padding: 10px 12px; border-bottom: 1px solid #eee; }
+        .history-table th { background-color: #fafafa; font-weight: bold; color: #555; position: sticky; top: 0; }
+        
+        .event-match { color: #27AE60; font-weight: bold; }
+        .event-miss { color: #C0392B; font-weight: bold; }
+
+        .btn-restart {
+            background-color: #E67E22;
+            color: white;
+            border: none;
+            font-size: 16px;
+            font-weight: bold;
+            padding: 12px 45px;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+            width: 80%;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        @media (max-height: 580px) {
+            .card-grid { gap: 4px; }
+            .card-btn { font-size: 16px; }
+            .hud-stats { margin-bottom: 6px; padding: 6px 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-wrapper" id="coreWrapper">
+    <div id="statsLabel" class="hud-stats">
+        <span>Tries: 0</span>
+        <span>Matches: 0/12</span>
+        <span>Misses: 0</span>
+    </div>
+
+    <div id="cardGrid" class="card-grid"></div>
+
+    <div id="resultsPanel" class="results-panel">
+        <div class="results-title">🎉 Game Complete! 🎉</div>
+        <div id="resultsSubtitle" class="results-subtitle">Total Tries: 0 | Missed Opportunities: 0</div>
+        
+        <div class="history-scroll-box">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Try #</th>
+                        <th>Event Type</th>
+                        <th>Cards</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+            </table>
+        </div>
+
+        <button class="btn-restart" onclick="window.location.reload()">Play Again</button>
+    </div>
+</div>
+
+<script>
+    // Game Setup Properties
+    let cards = [];
+    let buttons = [];
+    let firstCard = null;
+    let secondCard = null;
+    let tries = 0;
+    let matchesFound = 0;
+
+    // Analytics state variables
+    let revealedHistory = {};
+    let missedTries = 0;
+    let matchHistory = [];
+    let lockBoard = false;
+
+    const gridContainer = document.getElementById('cardGrid');
+    const statsLabel = document.getElementById('statsLabel');
+    const resultsPanel = document.getElementById('resultsPanel');
+    const historyBody = document.getElementById('historyBody');
+    const resultsSubtitle = document.getElementById('resultsSubtitle');
+
+    // iOS fix: An empty listener on touchstart forces iOS Safari to honor :active states
+    document.addEventListener('touchstart', function() {}, {passive: true});
+
+    initGame();
+
+    function initGame() {
+        let primaryArray = [];
+        for (let i = 1; i <= 12; i++) { primaryArray.push(i, i); }
+        
+        for (let i = primaryArray.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [primaryArray[i], primaryArray[j]] = [primaryArray[j], primaryArray[i]];
+        }
+        cards = primaryArray;
+
+        gridContainer.innerHTML = "";
+        buttons = [];
+        for (let i = 0; i < 24; i++) {
+            const btn = document.createElement('button');
+            btn.className = "card-btn";
+            btn.addEventListener('click', () => cardClicked(i));
+            gridContainer.appendChild(btn);
+            buttons.push(btn);
+        }
+    }
+
+    function cardClicked(idx) {
+        if (lockBoard) return;
+        if (buttons[idx].classList.contains('flipped') || buttons[idx].classList.contains('matched')) return;
+        if (firstCard !== null && secondCard !== null) return;
+
+        const cardValue = cards[idx];
+        buttons[idx].textContent = cardValue;
+        buttons[idx].classList.add('flipped');
+
+        if (firstCard === null) {
+            firstCard = idx;
+        } else {
+            secondCard = idx;
+            tries++;
+
+            const val1 = cards[firstCard];
+            const classVal2 = cards[secondCard];
+
+            if (val1 === classVal2) {
+                lockBoard = true;
+                setTimeout(() => handleMatch(cardValue), 300);
+            } else {
+                let isMiss = false;
+
+                let twinIndexOfCard1 = null;
+                for (const [key, value] of Object.entries(revealedHistory)) {
+                    if (value === val1 && parseInt(key) !== firstCard) {
+                        twinIndexOfCard1 = parseInt(key);
+                        break;
+                    }
+                }
+
+                if (twinIndexOfCard1 !== null && secondCard !== twinIndexOfCard1) {
+                    isMiss = true;
+                }
+
+                if (isMiss) {
+                    missedTries++;
+                    matchHistory.push({
+                        type: "miss",
+                        value: `${val1} & ${classVal2}`,
+                        atTry: tries
+                    });
+                }
+
+                updateStatsUI();
+                lockBoard = true;
+                setTimeout(resetFlippedCards, 1000);
+            }
+        }
+    }
+
+    function handleMatch(cardValue) {
+        buttons[firstCard].className = "card-btn matched";
+        buttons[secondCard].className = "card-btn matched";
+        buttons[firstCard].textContent = cardValue;
+        buttons[secondCard].textContent = cardValue;
+
+        matchesFound++;
+
+        matchHistory.push({
+            type: "match",
+            value: `Pair [${cardValue}]`,
+            atTry: tries
+        });
+
+        delete revealedHistory[firstCard];
+        delete revealedHistory[secondCard];
+
+        updateStatsUI();
+
+        firstCard = null;
+        secondCard = null;
+        lockBoard = false;
+
+        if (matchesFound === 12) {
+            showResults();
+        }
+    }
+
+    function resetFlippedCards() {
+        revealedHistory[firstCard] = cards[firstCard];
+        revealedHistory[secondCard] = cards[secondCard];
+
+        buttons[firstCard].className = "card-btn";
+        buttons[secondCard].className = "card-btn";
+        buttons[firstCard].textContent = "";
+        buttons[secondCard].textContent = "";
+
+        firstCard = null;
+        secondCard = null;
+        lockBoard = false;
+    }
+
+    function updateStatsUI() {
+        statsLabel.innerHTML = `
+            <span>Tries: ${tries}</span>
+            <span>Matches: ${matchesFound}/12</span>
+            <span>Misses: ${missedTries}</span>
+        `;
+    }
+
+    function showResults() {
+        gridContainer.style.display = 'none';
+        statsLabel.style.display = 'none';
+
+        // Allow screen scrolling again once game is completed to view stats table
+        document.body.style.overflow = 'auto';
+
+        resultsSubtitle.textContent = `Tries: ${tries} | Missed Opportunities: ${missedTries}`;
+        
+        let htmlRows = "";
+        matchHistory.forEach(item => {
+            const isMatch = item.type === "match";
+            const typeText = isMatch ? "✨ Match" : "❌ Miss";
+            const typeClass = isMatch ? "event-match" : "event-miss";
+
+            htmlRows += `
+                <tr>
+                    <td>${item.atTry}</td>
+                    <td class="${typeClass}">${typeText}</td>
+                    <td>${item.value}</td>
+                </tr>
+            `;
+        });
+        
+        historyBody.innerHTML = htmlRows;
+        resultsPanel.classList.add('active');
+    }
+</script>
+
+</body>
+</html>
